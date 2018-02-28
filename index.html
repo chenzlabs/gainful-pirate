@@ -3,407 +3,12 @@
   <head>    
 
 <script src="https://rawgit.com/chenzlabs/aframe/tracked-controls-fix-dist/dist/aframe-master.js"></script>
-    
-<!--
-<script src="https://lo-th.github.io/fullik/build/fullik.js"></script>
--->
-<script src="Fullik.js"></script>
-<script src="Geom.js"></script>
-<script src="Joint.js"></script>
-<script src="Bone.js"></script>
-<script src="Chain.js"></script>
-<script src="Structure.js"></script>
-    
+        
   </head>
 <body>
   
 <script>
-  var X_AXIS = new Fullik.V3( 1, 0, 0 );
-  var Y_AXIS = new Fullik.V3( 0, 1, 0 );
-  var Z_AXIS = new Fullik.V3( 0, 0, 1 );
-  //var scale = 1; //0.5; //20;
-  
-  AFRAME.registerComponent('structure', {
-    init: function () {
-      this.solver = new Fullik.Structure(this.el.sceneEl.object3D);
-      this.needsUpdate = true;
-      // HACK: to change scale of rendering, and ultimately to use a-frame
-      this.solver.addBoneMesh = this.addBoneMesh.bind(this);
-      this.originalUpdateChainMesh = this.solver.updateChainMesh.bind(this.solver);
-      this.solver.updateChainMesh = this.updateChainMesh.bind(this);
-      
-      this.tick = AFRAME.utils.throttleTick(this.throttledTick, 100, this);
-    },
-    
-    updateChainMesh: function (chain, meshChain, chainIndex) {
-      // handle timing ourselves... this.originalUpdateChainMesh(chain, meshChain, chainIndex);
-    },
-    addBoneMesh: function (bone) {
-      var scale = 0.025;
-      
-        var size = bone.mLength;
-        var color = bone.color;
-        var g = new THREE.CylinderBufferGeometry ( scale*1, scale*0.5, size, 4 );
-        g.applyMatrix( new THREE.Matrix4().makeRotationX( -Math.PI*0.5 ) )
-        g.applyMatrix( new THREE.Matrix4().makeTranslation( 0, 0, size*0.5 ) );
-        var m = new THREE.MeshStandardMaterial();
-        m.color.setHex( color );
-        var m2 = new THREE.MeshBasicMaterial({ wireframe : true });
-        var extraMesh;
-        var extraGeo;
-        var type = bone.getJoint().type;
-        switch(type){
-            case Fullik.J_BALL :
-                m2.color.setHex(0xFF6600);
-                var angle  = bone.getJoint().mRotorConstraintDegs;
-                if(angle === 180) break;
-                var s = size/4;
-                var r = 2;//
-                extraGeo = new THREE.CylinderBufferGeometry ( 0, scale*r, s, 6 );
-                extraGeo.applyMatrix( new THREE.Matrix4().makeRotationX( -Math.PI*0.5 ) )
-                extraGeo.applyMatrix( new THREE.Matrix4().makeTranslation( 0, 0, s*0.5 ) );
-                extraMesh = new THREE.Mesh( extraGeo,  m2 );
-            break;
-            case Fullik.J_GLOBAL_HINGE :
-            var a1 = bone.getJoint().mHingeClockwiseConstraintDegs * Fullik.torad;
-            var a2 = bone.getJoint().mHingeAnticlockwiseConstraintDegs * Fullik.torad;
-            var r = 2;
-            m2.color.setHex(0xFFFF00);
-            extraGeo = new THREE.CircleGeometry ( scale*r, scale*12, a1, a1+a2 );
-            extraGeo.applyMatrix( new THREE.Matrix4().makeRotationX( -Math.PI*0.5 ) );
-            extraMesh = new THREE.Mesh( extraGeo,  m2 );
-            break;
-            case Fullik.J_LOCAL_HINGE :
-            var r = 2;
-            var a1 = bone.getJoint().mHingeClockwiseConstraintDegs * Fullik.torad;
-            var a2 = bone.getJoint().mHingeAnticlockwiseConstraintDegs * Fullik.torad;
-            m2.color.setHex(0x00FFFF);
-            extraGeo = new THREE.CircleGeometry ( scale*r, scale*12, a1, a1+a2 );
-            extraGeo.applyMatrix( new THREE.Matrix4().makeRotationX( -Math.PI*0.5 ) );
-            extraMesh = new THREE.Mesh( extraGeo,  m2 );
-            break;
-        }
-        var b = new THREE.Mesh( g,  m );
-        if (this.el.object3D) this.el.object3D.add(b); //this.scene.add( b );
-        if( extraMesh ) b.add( extraMesh );
-        return b;
-    }, 
-    
-    needUpdate: function () { this.needsUpdate = true; },
-    
-    update: function (oldData) { this.needUpdate(); },
-    
-    throttledTick: function () {
-      if (this.needsUpdate) {
-        this.needsUpdate = false;
-        //console.log('structure: solver update');
-        this.solver.update();
-        
-        for (var i=0; i<this.solver.chains.length; i++) {
-          this.originalUpdateChainMesh(this.solver.getChain(i), this.solver.meshChains[i], i);
-        }
-      }
-    },
-    
-    remove: function () {
-      delete this.solver;
-    }
-  });
-  
-  function findInParents(el, selector) {
-    for (var parent = el.parentElement; parent; el = parent, parent = el.parentElement) {
-      var qs = parent.querySelector(selector);
-      if (qs) { return qs; }
-    }
-    return null;
-  }
-  function getClosestStructureParent(el) {
-    var structure = findInParents(el, '[structure]');
-    return structure ? structure : null;
-  }
-  
-  function getClosestStructure(el) {
-    var structure = getClosestStructureParent(el);
-    return structure ? structure.components.structure : null;
-  }
-  function newChain(color) {
-    var chain = new Fullik.Chain(color);
-    chain.setSolveDistanceThreshold(0.0001); //0.1/20 * scale);
-    chain.setMaxIterationAttempts(50);
-    chain.setMinIterationChange(0.00001); //0.01/20 * scale);
-    return chain;
-  }
-  function nearEquals(v1, v2) {
-    return (v1.x === v2.x && v1.y === v2.y && v1.z === v2.z);  
-  }
-  function checkForChanges(self) {
-    var lastTargetPosition = self.lastTargetPosition || new Fullik.V3(0,0,0);
-      
-    // because we headlocked the model (at least for now),
-    // need to compute target position relative to HMD position and update this.targetPosition
-    lastTargetPosition.copy(self.data.target.object3D.position);
-    if (self.data.origin) {
-      // FIXME: needs to include origin rotation!!! this does not
-      lastTargetPosition.sub(self.data.origin.object3D.position);
-      //lastTargetPosition.applyQuaternion(self.data.origin.object3D.quaternion);
-      lastTargetPosition.applyAxisAngle(Y_AXIS, -self.data.origin.object3D.rotation.y);
-    }    
-    
-    if (!nearEquals(lastTargetPosition, self.targetPosition)) {
-      self.targetPosition.copy(lastTargetPosition);
-      self.structure.needUpdate();      
-      return true;
-    }      
-  }  
-    
-  AFRAME.registerComponent('spine', {
-    schema: {
-      structure: {type: 'selector'},
-      waistHeight: {default: 0.85},      
-      tailbone: {default: 0.01},
-      waistToNeck: {default: 0.4},
-      neck: {default: 0.01},      
-      color: {type: 'color', default: 'white'},      
-      target: {type: 'selector'}      
-    },
-    
-    init: function () {
-      this.chain = newChain(this.data.color);
-/*
-      // base of the spine
-      // because the IK library has weird issues with rotor constraints, move the tailbone back to compensate
-      this.basebone = new Fullik.Bone(new Fullik.V3(0, this.data.waistHeight, 0), new Fullik.V3( 0, this.data.waistHeight, this.data.tailbone ) );
-      this.chain.addBone(this.basebone);
-      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS, this.data.waistToNeck, 40);
-      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS, this.data.neck, 40);
-*/
-      this.basebone = new Fullik.Bone(new Fullik.V3(0, 0, 0),
-                                      new Fullik.V3(0, -0.125 /* eyes to bottom of head */ - this.data.neck, 0.08));
-      this.chain.addBone(this.basebone);      
-      this.chain.setRotorBaseboneConstraint("local", this.basebone.getDirectionUV(), 0);
-      // what the hell? spine goes straight up regardless of axis unless we rotor constrain, and even then it's the wrong way?
-      this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.waistToNeck/2, "global", X_AXIS, 0, 0, Y_AXIS.negated());
-      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS.negated(), this.data.waistToNeck/2, 0);
-      
-      this.data.target.addEventListener('componentchanged', this.onTargetChanged.bind(this));
-      
-      this.structure = getClosestStructure(this.data.structure || this.el);
-      
-      if (!this.structure) {
-        console.error('spine: this has no structure');
-        return;
-      }
-        
-      this.structure.solver.add(this.chain, this.data.target.object3D.position, true);
-      this.structure.needUpdate();      
-    }, 
-    onTargetChanged: function (evt) {
-      // this.structure.solver.update(); // so it changes with inspector
-      this.structure.needUpdate();
-    }, 
-    
-    update: function (oldData) {
-    },
-    
-    remove: function () {
-      // TODO: unhook from solver
-      delete this.chain;
-      delete this.structure;
-      delete this.basebone;
-    }
-  });
-  //var neckToShoulderLength = scale * 0.16;
-  //var upperArmLength = scale * 0.40;
-  
-  AFRAME.registerComponent('arm', {
-    schema: {
-      structure: {type: 'selector'},
-      side: {type: 'string', oneOf: ['left', 'right'], default: 'right'},
-      neckToShoulder: {default: 0.2},
-      shoulderToElbow: {default: 0.24},
-      elbowToWrist: {default: 0.25},
-      wristToTip: {default: 0.01},
-      color: {type: 'color', default: 'white'},      
-      target: {type: 'selector'},      
-      origin: {type: 'selector'}      
-    },
-    
-    init: function () {
-      this.chain = newChain(this.data.color);
-      var sideSign = (this.data.side === 'right' ? 1 : -1);
-      this.basebone = new Fullik.Bone(new Fullik.V3( 0, 0, 0 ), new Fullik.V3( 0, this.data.neckToShoulder, 0));
-      this.chain.addBone(this.basebone);
-      // FIXME: some or all of these should be hinged
-      this.chain.setRotorBaseboneConstraint('local', new Fullik.V3(sideSign * 1, -0.2, 0), 0);
-      this.chain.addConsecutiveRotorConstrainedBone(new Fullik.V3(sideSign * 0.3, 0, 1), this.data.shoulderToElbow, 135);
-      //this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.elbowToWrist, 'local', sideSign >= 0 ? X_AXIS : X_AXIS.negated(), 180, 0, Y_AXIS.negated());
-      this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.elbowToWrist, 'global', X_AXIS, 180, 0, Y_AXIS.negated());      
-      this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.wristToTip, 'local', Y_AXIS.negated(), 70, 70, Z_AXIS);
-      
-      this.targetPosition = new THREE.Vector3();
-      
-      this.structure = getClosestStructure(this.data.structure || this.el);
-      
-      if (!this.structure) {
-        console.error('arm: this has no structure');
-        return;
-      }
-//      this.structure.solver.connectChain(this.chain, 0, 1, 'start', this.targetPosition, true, this.data.color);
-      this.structure.solver.connectChain(this.chain, 0, 0 /* only one bone, no neck */, 'start', this.targetPosition, true, this.data.color);
-      // force change initially
-      this.structure.needUpdate();
-      
-      // listen for inspector changes when ticks are frozen
-      this.data.target.addEventListener('componentchanged', this.onTargetChanged.bind(this));
-    }, 
-    onTargetChanged: function (evt) {
-      if (!this.el.sceneEl.isPlaying) { 
-        if (checkForChanges(this)) {
-          this.structure.throttledTick(); 
-        }
-      }
-    }, 
-    
-    update: function (oldData) {
-      checkForChanges(this);
-    },
-    
-    tick: function (t, dt) {
-      checkForChanges(this);
-    },
-    
-    remove: function () {
-      // TODO: unhook from solver
-      delete this.chain;
-      delete this.structure;
-      delete this.basebone;
-    }
-  });
-  AFRAME.registerComponent('leg', {
-    schema: {
-      structure: {type: 'selector'},
-      side: {type: 'string', oneOf: ['left', 'right'], default: 'right'},
-      waistToHip: {default: 0.15},
-      hipToKnee: {default: 0.37},
-      kneeToAnkle: {default: 0.37},
-//      ankleToTip: {default: 0.05},
-      color: {type: 'color', default: 'white'},      
-      target: {type: 'selector'},      
-      origin: {type: 'selector'}      
-    },
-    
-    init: function () {
-      this.chain = newChain(this.data.color);
-      var sideSign = (this.data.side === 'right' ? 1 : -1);
-      this.basebone = new Fullik.Bone(new Fullik.V3( 0, 0, 0 ), undefined, new Fullik.V3(sideSign * 1.5, 0, 1), this.data.waistToHip); // new Fullik.V3( 0, 0, this.data.waistToHip) );
-      this.chain.addBone(this.basebone);
-      // FIXME: some or all of these should be hinged
-      //this.chain.addConsecutiveRotorConstrainedBone(Z_AXIS, this.data.hipToKnee, 100);
-      // this axis value angles the hips to the side, and forward, in right orientation for hip swivel
-      this.chain.setRotorBaseboneConstraint('local', this.basebone.getDirectionUV(), 0);
-      
-      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS.negated(), this.data.hipToKnee, 90); // 70... this works better
-      
-/*      
-// kinda works...      this.chain.addConsecutiveRotorConstrainedBone(new Fullik.V3(sideSign * -1, 0, 0), this.data.hipToKnee, 50);
-      this.chain.addConsecutiveRotorConstrainedBone(new Fullik.V3(0, 1, 0), this.data.hipToKnee, 60); // 70... this works better
-*
-      // this axis value angles the hips to the side, and down, not in right orientation for hip swivel
-      this.chain.setRotorBaseboneConstraint('local', new Fullik.V3(sideSign * 0.6, 0, -1), 0); 
-      // when that's done, the axis provided here doesn't seem to do much of anything :-/
-      this.chain.addConsecutiveRotorConstrainedBone(new Fullik.V3(-1, 0, -1).normalize(), this.data.hipToKnee, 30);
-*/
-//      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS.negated(), this.data.kneeToAnkle, 0*90);
-//      this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.kneeToAnkle, 'local', sideSign >= 0 ? X_AXIS : X_AXIS.negated(), 180, 0, Y_AXIS.negated());
-      this.chain.addConsecutiveHingedBone(sideSign >= 0 ? X_AXIS.negated() : X_AXIS, this.data.kneeToAnkle, 'local', Y_AXIS.negated(), 90, 75, sideSign >= 0 ? X_AXIS.negated() : X_AXIS);
-//      this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.kneeToAnkle, 'local', X_AXIS.negated(), 0, 0, Y_AXIS.negated());
-      this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS.negated(), this.data.ankleToTip, 0*20);
-      //this.chain.addConsecutiveHingedBone(Y_AXIS.negated(), this.data.ankleToTip, 'local', Y_AXIS.negated(), 70, 0, Z_AXIS);
-      
-      this.targetPosition = new THREE.Vector3();
-/*      
-      this.targetPosition.copy(this.data.target.object3D.position);
-      if (this.data.origin) {
-        // FIXME: needs to include origin rotation!!! this does not
-        this.targetPosition.sub(this.data.origin.object3D.position);
-      }    
-*/      
-      this.structure = getClosestStructure(this.data.structure || this.el);
-      
-      if (!this.structure) {
-        console.error('leg: this has no structure');
-        return;
-      }        
-//      this.structure.solver.connectChain(this.chain, 0, 0, 'start', this.targetPosition, true, this.data.color);
-      this.structure.solver.connectChain(this.chain, 0, 2, 'start', this.targetPosition, true, this.data.color);
-      
-      // force change initially
-      this.structure.needUpdate();
-      
-      // listen for inspector changes when ticks are frozen
-      this.data.target.addEventListener('componentchanged', this.onTargetChanged.bind(this));
-    }, 
-    onTargetChanged: function (evt) {
-      if (!this.el.sceneEl.isPlaying) { 
-        if (checkForChanges(this)) {
-          this.structure.throttledTick(); 
-        }
-      }
-    }, 
-    
-    update: function (oldData) {
-      checkForChanges(this);
-    },
-    
-    tick: function (t, dt) {
-      checkForChanges(this);
-    },
-    
-    remove: function () {
-      // TODO: unhook from solver
-      delete this.chain;
-      delete this.structure;
-      delete this.basebone;
-    }
-  });    
-  
-</script>
-
-<script>
-  AFRAME.registerComponent('tracker-marker', {
-    schema: {type: 'string'},
-    init: function () {
-      // red ray forward (-Z)
-      var forwardRayEl = document.createElement('a-box');
-      forwardRayEl.setAttribute('width', '0.001');
-      forwardRayEl.setAttribute('height', '0.001');
-      forwardRayEl.setAttribute('depth', '1');
-      forwardRayEl.setAttribute('position', '0 0 -0.5');
-      forwardRayEl.setAttribute('color', 'red');
-      this.el.appendChild(forwardRayEl);
-      // blue ray up (+Y)
-      var upwardRayEl = document.createElement('a-box');
-      upwardRayEl.setAttribute('width', '0.001');
-      upwardRayEl.setAttribute('height', '1');
-      upwardRayEl.setAttribute('depth', '0.001');
-      upwardRayEl.setAttribute('position', '0 0.5 0');
-      upwardRayEl.setAttribute('color', 'blue');
-      this.el.appendChild(upwardRayEl);
-      // blue label with carets forward (-Z)
-      var labelEl = document.createElement('a-box');
-      labelEl.setAttribute('color', 'blue');
-      labelEl.setAttribute('text', 'zOffset:0.0205; color:white; align:center; wrapCount:5; value:^' + this.data + '^');
-      labelEl.setAttribute('width', '0.1');
-      labelEl.setAttribute('height', '0.1');
-      labelEl.setAttribute('depth', '0.001');
-      labelEl.setAttribute('rotation', '-90 0 0');      
-      this.el.appendChild(labelEl);
-    }
-  })
-</script>
-  
-<script>
-  AFRAME.registerComponent('sync-pose', {
+  AFRAME.registerComponent('sync-position-yaw', {
     schema: {type: 'selector'},
     tick: function (t, dt) {
       var pos = this.data.object3D.position; //getAttribute('position');
@@ -412,42 +17,194 @@
     }
   });
 </script>
-  
 
-<a-scene background="color:blue">
+<script>
+  AFRAME.registerComponent('sync-pose', {
+    schema: {
+      src: {type: 'selector'},
+      offset: {type: 'vec3'}
+    },
+    
+    init: function () {
+      this.tempPos = new THREE.Vector3();
+    },
+    
+    tick: function (t, dt) {
+      this.tempPos.copy(this.data.offset);
+      this.tempPos.applyQuaternion(this.data.src.object3D.quaternion);
+      this.tempPos.add(this.data.src.object3D.position);
+      this.el.setAttribute('position', this.tempPos);
+      this.el.setAttribute('rotation', this.data.src.getAttribute('rotation'));
+    }
+  });
+</script>  
+
+<script>
+  AFRAME.registerComponent('compute-elbow', {
+    schema: {
+      length: {default: 0.3},
+      gravity: {type: 'vec3', default: '0 -1 0'},
+      shoulder: {type: 'selector'},
+      wrist: {type: 'selector'},
+      origin: {type: 'selector'}
+    },
+    
+    init: function () {
+      this.tempPos = new THREE.Vector3();
+      this.tempPos2 = new THREE.Vector3();
+      this.tempPos3 = new THREE.Vector3();
+    },
+    
+    tick: function (t, dt) {
+      // compute halfway between shoulder and wrist
+      this.tempPos.copy(this.data.wrist.object3D.position);
+      this.tempPos.sub(this.data.shoulder.object3D.position);
+      this.tempPos.divideScalar(2);
+      
+      // if not long enough (which seems rather likely), pull it
+      var d2 = this.tempPos.lengthSq();
+      if (d2 < this.data.length * this.data.length) {
+        var d = Math.sqrt(this.data.length * this.data.length - d2);
+        
+        // ... in the direction of origin to shoulder, plus gravity (?)
+        this.tempPos2.copy(this.data.shoulder.object3D.position);
+        this.tempPos2.sub(this.data.origin.object3D.position);
+        this.tempPos2.add(this.data.gravity);
+        this.tempPos2.normalize();
+        // FIXME: this is wrong assuming the vector is NOT perpendicular...
+        //this.tempPos2.multiplyScalar(d);
+        
+        // Compute the unit vector that is perpendicular to this.tempPos and coplanar with this.tempPos2 ...
+        // if dot product is zero, we're already perpendicular.  
+        // Otherwise, we need to figure out what ratio to add to make it zero.
+        // Compute the angle between the two vectors.
+        this.tempPos3.copy(this.tempPos);
+        this.tempPos3.normalize();
+        var costheta = this.tempPos2.dot(this.tempPos3);
+        // Make a perpendicular vector, although it will not be a unit vector.        
+        this.tempPos3.multiplyScalar(costheta);
+        this.tempPos2.sub(this.tempPos3);
+        
+        this.tempPos2.normalize();
+        this.tempPos2.multiplyScalar(d);
+        
+        this.tempPos.add(this.tempPos2); 
+      }      
+      
+      this.tempPos.add(this.data.shoulder.object3D.position);
+      this.el.setAttribute('position', this.tempPos);
+      //this.el.setAttribute('rotation', this.data.origin.getAttribute('rotation'));
+    }
+  });
+</script>    
+
+<script>
+  AFRAME.registerComponent('show-parent-to-target', {
+    schema: {
+      target: {type: 'selector'},
+      radius: {default: 0.01}
+    },
+    
+    init: function () {
+      this.from = new THREE.Vector3(0, 1, 0);
+      this.tempPos = new THREE.Vector3();
+      this.tempQuat = new THREE.Quaternion();      
+    },
+    
+    update: function (oldData) {
+      this.el.setAttribute('geometry', 'radius', this.data.radius);
+    },
+    
+    tick: function (t, dt) {
+      this.tempPos.copy(this.data.target.object3D.position);
+      this.tempPos.sub(this.el.parentElement.object3D.position);
+
+      // compute height (length but we're using a cylinder)
+      this.el.setAttribute('geometry', 'height', this.tempPos.length());
+      
+      // compute halfway between
+      this.tempPos.divideScalar(2);
+      this.el.setAttribute('position', this.tempPos);
+      
+      // compute orientation
+      // FIXME: compute relative rotation!
+      this.tempPos.normalize();
+      this.tempQuat.setFromUnitVectors(this.from, this.tempPos);
+      this.el.object3D.quaternion.copy(this.tempQuat);
+    }
+  });
+</script>    
+    
+<a-scene background="color:#3cf">
   <a-entity id="player" wasd-controls>
     <!-- new master bug: when entering VR, HMD Y position is negative, wtf? -->
     
     <a-entity id="hmd" camera="active:false">
-      <a-text id="hud" value="Hi there!" align="center" wrap-count="500" position="0 -0.1 -0.25"></a-text>
+      <a-text id="hud" value="Hi there!" align="center" wrap-count="1000" position="0 -0.1 -0.25"></a-text>
+      
+<!--
+Forward is negative Z; make attachment point 
+From HMD position, neck is about 0, -0.2, 0.1
+-->
+      <a-sphere id="hmd-ball" radius="0.01">
+        <a-sphere id="hmd-to-headcenter" position="0 -0.04 0.09" radius="0.01">
+          <a-sphere opacity="0.5" scale="0.08 0.12 0.09">
+          </a-sphere>
+        </a-sphere>
+      </a-sphere>
+      
+      <a-sphere id="hmd-to-neck" position="0 -0.16 0.12" radius="0.01">
+          <a-sphere id="neck-to-left-shoulder" position="-0.2 0 0" radius="0.01">
+          </a-sphere>
+          <a-sphere id="neck-to-right-shoulder" position="0.2 0 0" radius="0.01">
+          </a-sphere>
+      </a-sphere>
+<!--      
       <a-sphere opacity="0.5" scale="0.1 0.125 0.075">
         <a-cone opacity="0.5" color="magenta" position="0 -0.25 -1.05" scale="0.03 0.3 0.04" rotation="-90 0 0"></a-cone>
       </a-sphere> 
+-->
     </a-entity>
     <a-entity id="left-hand" laser-controls="hand:left">
+<!--      
+        <a-sphere id="lh-ball" radius="0.01">
+          <a-sphere id="lh-to-handcenter" position="0 0 0.05" radius="0.01">
+          </a-sphere>
+          <a-sphere id="lh-to-wrist" position="0 0 0.12" radius="0.01">
+          </a-sphere>
+        </a-sphere>
+-->
       <a-sphere opacity="0.5" scale="0.025 0.02 0.1">
         <a-cone opacity="0.5" color="red" position="0 -0.25 -1" scale="0.5 2 0.5" rotation="-90 0 0"></a-cone>
       </a-sphere>
     </a-entity>
+    <a-sphere id="left-wrist" radius="0.015" color="red" sync-pose="src:#left-hand; offset:0 -0.04 0.12"></a-sphere>
+    <a-sphere id="left-shoulder" radius="0.015" color="red" sync-pose="src:#hmd; offset:-0.2 -0.2 0.03"></a-sphere>
+    <a-sphere id="left-elbow" radius="0.015" color="red" compute-elbow="shoulder:#left-shoulder; wrist:#left-wrist; origin:#hmd">
+      <a-cylinder show-parent-to-target="target:#left-shoulder"></a-cylinder>
+      <a-cylinder show-parent-to-target="target:#left-wrist"></a-cylinder>
+    </a-sphere>
+    
     <a-entity id="right-hand" laser-controls="hand:right">
+<!--      
+        <a-sphere id="rh-ball" radius="0.01">
+          <a-sphere id="rh-to-handcenter" position="0 0 0.05" radius="0.01">
+          </a-sphere>
+          <a-sphere id="rh-to-wrist" position="0 0 0.12" radius="0.01">
+          </a-sphere>
+        </a-sphere>
+-->
       <a-sphere opacity="0.5" scale="0.025 0.02 0.1">
         <a-cone opacity="0.5" color="blue" position="0 -0.25 -1" scale="0.5 2 0.5" rotation="-90 0 0"></a-cone>
       </a-sphere>
     </a-entity>
+    <a-sphere id="right-wrist" radius="0.015" color="blue" sync-pose="src:#right-hand; offset:0 -0.04 0.12"></a-sphere>\
+    <a-sphere id="right-shoulder" radius="0.015" color="blue" sync-pose="src:#hmd; offset:0.2 -0.2 0.03"></a-sphere>
+    <a-sphere id="right-elbow" radius="0.015" color="blue" compute-elbow="shoulder:#right-shoulder; wrist:#right-wrist; origin:#hmd">
+      <a-cylinder show-parent-to-target="target:#right-shoulder"></a-cylinder>
+      <a-cylinder show-parent-to-target="target:#right-wrist"></a-cylinder>
+    </a-sphere>
     
-    <a-entity id="ik" sync-pose="#hmd">
-      <!-- Children init before parent, so to make sure we have structure in time, make it peer -->
-      <a-entity id="structure" structure></a-entity>
-      <!-- Build the body from head down with bones -->
-      <a-entity spine="target:#hmd;structure:#structure"></a-entity>
-      <a-entity arm="side:left;target:#left-hand;structure:#structure;origin:#hmd"></a-entity>
-      <a-entity arm="side:right;target:#right-hand;structure:#structure;origin:#hmd"></a-entity>    
-<!--      
-      <a-entity leg="side:left;target:#left-foot;structure:#structure;origin:#head"></a-entity>
-      <a-entity leg="side:right;target:#right-foot;structure:#structure;origin:#head"></a-entity>      
--->
-    </a-entity>
-  
     <a-entity id="model" rotation="0 180 0" not-gltf-model="https://ucarecdn.com/d9c8bc96-46e9-4b43-9987-c393720049cf/"></a-entity>
   </a-entity>
 
@@ -492,9 +249,31 @@ var root=model.model.children[0].children[0];
       el.setAttribute('position', attr);
     });
   }
+
+    // FIX ONE: point raycaster in the right direction
+    AFRAME.components['laser-controls'].Component.prototype.config['oculus-touch-controls'].raycaster.direction.y = 0;
+
+    AFRAME.components['oculus-touch-controls'].originalOnModelLoaded = AFRAME.components['oculus-touch-controls'].Component.prototype.onModelLoaded;
+    AFRAME.components['oculus-touch-controls'].Component.prototype.onModelLoaded = function (evt) {
+      AFRAME.components['oculus-touch-controls'].originalOnModelLoaded.call(this, evt);        
+      // FIX TWO: align model with raycaster (and reality)
+      this.el.object3D.traverse(function (child) {
+        if (child instanceof THREE.Mesh) {
+          if (child.name.indexOf("body_oculus-touch-controller-") == 0) {
+            child.parent.rotateX(Math.PI / 4);
+            child.parent.translateY(0.06);
+          }
+        }
+      });
+    };
+    
   
   function onSceneLoaded() {
     console.log("onSceneLoaded()");
+    
+    // undesirable hack to fix Oculus Touch pose, from https://github.com/aframevr/aframe/issues/2965#issuecomment-341949659
+    // which doesn't work for me
+
     if (!navigator.getVRDisplays) {
       console.log("!navigator.getVRDisplays");
       nonVRPosition();
@@ -521,12 +300,42 @@ var root=model.model.children[0].children[0];
     var hmd = document.querySelector('#hmd');
     var lh = document.querySelector('#left-hand');
     var rh = document.querySelector('#right-hand');
+    var lw = document.querySelector('#left-wrist');
+    var rw = document.querySelector('#right-wrist');
+    var ls = document.querySelector('#left-shoulder');
+    var rs = document.querySelector('#right-shoulder');
+    var le = document.querySelector('#left-elbow');
+    var re = document.querySelector('#right-elbow');
     setInterval(function () {
       hud.setAttribute('value',
         'Y values:'
-        + '\nhmd = ' + hmd.getAttribute('position').y
-        + '\nleft-hand = ' + lh.getAttribute('position').y
-        + '\nright-hand = ' + rh.getAttribute('position').y
+        + '\nhmd = (' + hmd.getAttribute('position').x.toFixed(3)
+          + ', ' + hmd.getAttribute('position').y.toFixed(3)
+          + ', ' + hmd.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-hand = (' + lh.getAttribute('position').x.toFixed(3)
+          + ', ' + lh.getAttribute('position').y.toFixed(3)
+          + ', ' + lh.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-hand = (' + rh.getAttribute('position').x.toFixed(3)
+          + ', ' + rh.getAttribute('position').y.toFixed(3)
+          + ', ' + rh.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-wrist = (' + lw.getAttribute('position').x.toFixed(3)
+          + ', ' + lw.getAttribute('position').y.toFixed(3)
+          + ', ' + lw.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-wrist = (' + rw.getAttribute('position').x.toFixed(3)
+          + ', ' + rw.getAttribute('position').y.toFixed(3)
+          + ', ' + rw.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-shoulder = (' + ls.getAttribute('position').x.toFixed(3)
+          + ', ' + ls.getAttribute('position').y.toFixed(3)
+          + ', ' + ls.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-shoulder = (' + rs.getAttribute('position').x.toFixed(3)
+          + ', ' + rs.getAttribute('position').y.toFixed(3)
+          + ', ' + rs.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-elbow = (' + le.getAttribute('position').x.toFixed(3)
+          + ', ' + le.getAttribute('position').y.toFixed(3)
+          + ', ' + le.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-wrist = (' + re.getAttribute('position').x.toFixed(3)
+          + ', ' + re.getAttribute('position').y.toFixed(3)
+          + ', ' + re.getAttribute('position').z.toFixed(3) + ')'
       );
     }, 1000);
   }
