@@ -162,7 +162,7 @@
       waistHeight: {default: 0.85},      
       tailbone: {default: 0.01},
       waistToNeck: {default: 0.4},
-      neck: {default: 0.01},      
+      neck: {default: 0.04},      
       color: {type: 'color', default: 'white'},      
       target: {type: 'selector'}      
     },
@@ -178,7 +178,7 @@
       this.chain.addConsecutiveRotorConstrainedBone(Y_AXIS, this.data.neck, 40);
 */
       this.basebone = new Fullik.Bone(new Fullik.V3(0, 0, 0),
-                                      new Fullik.V3(0, -0.125 /* eyes to bottom of head */ - this.data.neck, 0.08));
+                                      new Fullik.V3(0, -0.16 /* eyes to bottom of head */ - this.data.neck, 0.12));
       this.chain.addBone(this.basebone);      
       this.chain.setRotorBaseboneConstraint("local", this.basebone.getDirectionUV(), 0);
       // what the hell? spine goes straight up regardless of axis unless we rotor constrain, and even then it's the wrong way?
@@ -403,7 +403,7 @@
 </script>
   
 <script>
-  AFRAME.registerComponent('sync-pose', {
+  AFRAME.registerComponent('sync-position-yaw', {
     schema: {type: 'selector'},
     tick: function (t, dt) {
       var pos = this.data.object3D.position; //getAttribute('position');
@@ -412,36 +412,94 @@
     }
   });
 </script>
-  
 
-<a-scene background="color:blue">
+<script>
+  AFRAME.registerComponent('sync-pose', {
+    schema: {
+      src: {type: 'selector'},
+      offset: {type: 'vec3'}
+    },
+    
+    init: function () {
+      this.tempPos = new THREE.Vector3();
+    },
+    
+    tick: function (t, dt) {
+      this.tempPos.copy(this.data.offset);
+      this.tempPos.applyQuaternion(this.data.src.object3D.quaternion);
+      this.tempPos.add(this.data.src.object3D.position);
+      this.el.setAttribute('position', this.tempPos);
+      this.el.setAttribute('rotation', this.data.src.getAttribute('rotation'));
+    }
+  });
+</script>  
+  
+<a-scene background="color:#3cf">
   <a-entity id="player" wasd-controls>
     <!-- new master bug: when entering VR, HMD Y position is negative, wtf? -->
     
     <a-entity id="hmd" camera="active:false">
       <a-text id="hud" value="Hi there!" align="center" wrap-count="500" position="0 -0.1 -0.25"></a-text>
+      
+<!--
+Forward is negative Z; make attachment point 
+From HMD position, neck is about 0, -0.2, 0.1
+-->
+      <a-sphere id="hmd-ball" radius="0.01">
+        <a-sphere id="hmd-to-headcenter" position="0 -0.04 0.09" radius="0.01">
+          <a-sphere opacity="0.5" scale="0.08 0.12 0.09">
+          </a-sphere>
+        </a-sphere>
+      </a-sphere>
+      
+      <a-sphere id="hmd-to-neck" position="0 -0.2 0.12" radius="0.01">
+          <a-sphere id="neck-to-left-shoulder" position="-0.2 0 0" radius="0.01">
+          </a-sphere>
+          <a-sphere id="neck-to-right-shoulder" position="0.2 0 0" radius="0.01">
+          </a-sphere>
+      </a-sphere>
+<!--      
       <a-sphere opacity="0.5" scale="0.1 0.125 0.075">
         <a-cone opacity="0.5" color="magenta" position="0 -0.25 -1.05" scale="0.03 0.3 0.04" rotation="-90 0 0"></a-cone>
       </a-sphere> 
+-->
     </a-entity>
     <a-entity id="left-hand" laser-controls="hand:left">
+<!--      
+        <a-sphere id="lh-ball" radius="0.01">
+          <a-sphere id="lh-to-handcenter" position="0 0 0.05" radius="0.01">
+          </a-sphere>
+          <a-sphere id="lh-to-wrist" position="0 0 0.12" radius="0.01">
+          </a-sphere>
+        </a-sphere>
+-->
       <a-sphere opacity="0.5" scale="0.025 0.02 0.1">
         <a-cone opacity="0.5" color="red" position="0 -0.25 -1" scale="0.5 2 0.5" rotation="-90 0 0"></a-cone>
       </a-sphere>
     </a-entity>
+    <a-sphere id="left-wrist" radius="0.015" color="red" sync-pose="src:#left-hand; offset:0 -0.04 0.12"></a-sphere>
     <a-entity id="right-hand" laser-controls="hand:right">
+<!--      
+        <a-sphere id="rh-ball" radius="0.01">
+          <a-sphere id="rh-to-handcenter" position="0 0 0.05" radius="0.01">
+          </a-sphere>
+          <a-sphere id="rh-to-wrist" position="0 0 0.12" radius="0.01">
+          </a-sphere>
+        </a-sphere>
+-->
       <a-sphere opacity="0.5" scale="0.025 0.02 0.1">
         <a-cone opacity="0.5" color="blue" position="0 -0.25 -1" scale="0.5 2 0.5" rotation="-90 0 0"></a-cone>
       </a-sphere>
     </a-entity>
+    <a-sphere id="right-wrist" radius="0.015" color="blue" sync-pose="src:#right-hand; offset:0 -0.04 0.12"></a-sphere>
     
-    <a-entity id="ik" sync-pose="#hmd">
+    <a-entity id="ik" sync-position-yaw="#hmd">
       <!-- Children init before parent, so to make sure we have structure in time, make it peer -->
       <a-entity id="structure" structure></a-entity>
       <!-- Build the body from head down with bones -->
       <a-entity spine="target:#hmd;structure:#structure"></a-entity>
-      <a-entity arm="side:left;target:#left-hand;structure:#structure;origin:#hmd"></a-entity>
-      <a-entity arm="side:right;target:#right-hand;structure:#structure;origin:#hmd"></a-entity>    
+      <a-entity arm="side:left;target:#left-wrist;structure:#structure;origin:#hmd"></a-entity>
+      <a-entity arm="side:right;target:#right-wrist;structure:#structure;origin:#hmd"></a-entity>    
 <!--      
       <a-entity leg="side:left;target:#left-foot;structure:#structure;origin:#head"></a-entity>
       <a-entity leg="side:right;target:#right-foot;structure:#structure;origin:#head"></a-entity>      
@@ -521,12 +579,26 @@ var root=model.model.children[0].children[0];
     var hmd = document.querySelector('#hmd');
     var lh = document.querySelector('#left-hand');
     var rh = document.querySelector('#right-hand');
+    var lw = document.querySelector('#left-wrist');
+    var rw = document.querySelector('#right-wrist');
     setInterval(function () {
       hud.setAttribute('value',
         'Y values:'
-        + '\nhmd = ' + hmd.getAttribute('position').y
-        + '\nleft-hand = ' + lh.getAttribute('position').y
-        + '\nright-hand = ' + rh.getAttribute('position').y
+        + '\nhmd = (' + hmd.getAttribute('position').x.toFixed(3)
+          + ', ' + hmd.getAttribute('position').y.toFixed(3)
+          + ', ' + hmd.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-hand = (' + lh.getAttribute('position').x.toFixed(3)
+          + ', ' + lh.getAttribute('position').y.toFixed(3)
+          + ', ' + lh.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-hand = (' + rh.getAttribute('position').x.toFixed(3)
+          + ', ' + rh.getAttribute('position').y.toFixed(3)
+          + ', ' + rh.getAttribute('position').z.toFixed(3) + ')'
+        + '\nleft-wrist = (' + lw.getAttribute('position').x.toFixed(3)
+          + ', ' + lw.getAttribute('position').y.toFixed(3)
+          + ', ' + lw.getAttribute('position').z.toFixed(3) + ')'
+        + '\nright-wrist = (' + rw.getAttribute('position').x.toFixed(3)
+          + ', ' + rw.getAttribute('position').y.toFixed(3)
+          + ', ' + rw.getAttribute('position').z.toFixed(3) + ')'
       );
     }, 1000);
   }
