@@ -14,7 +14,11 @@
 <script>
   AFRAME.registerComponent('lofi', {
     init: function () {
-      this.el.setAttribute('geometry', {segmentsWidth: 8, segmentsHeight: 8, segmentsRadial: 8});
+      var primitive = this.el.getAttribute('geometry').primitive;
+      if ('sphere' === primitive)
+        this.el.setAttribute('geometry', {segmentsWidth: 8, segmentsHeight: 8});
+      else // if ('cone' === primitive || 'cylinder' === primitive)
+        this.el.setAttribute('geometry', {segmentsRadial: 8, segmentsHeight: 8});
     }
   });
 </script>
